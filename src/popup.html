@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Kokoro Reader</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body data-state="idle">
+  <header class="top">
+    <h1>Kokoro Reader</h1>
+    <p id="status" class="status" role="status" aria-live="polite">Checking the voice model</p>
+  </header>
+
+  <section class="transport">
+    <button id="play" class="play" type="button" aria-label="Read this page">
+      <svg class="ring" viewBox="0 0 100 100" aria-hidden="true">
+        <circle class="ring-track" cx="50" cy="50" r="46"></circle>
+        <circle id="ring" class="ring-fill" cx="50" cy="50" r="46"></circle>
+      </svg>
+      <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+      <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+    </button>
+    <div class="transport-side">
+      <p id="playLabel" class="play-label">Read this page</p>
+      <p id="playHint" class="play-hint">Or select text first to read just that.</p>
+      <div class="side-actions">
+        <button id="stop" class="stop" type="button" disabled>Stop</button>
+        <button id="fromTop" class="link" type="button" hidden>Start from the top</button>
+      </div>
+    </div>
+  </section>
+
+  <figure id="resume" class="resume" hidden>
+    <div class="resume-bar"><span id="resumeFill"></span></div>
+    <figcaption>
+      <span id="resumePct"></span>
+      <q id="resumeText"></q>
+    </figcaption>
+  </figure>
+
+  <p id="note" class="note" role="alert" hidden></p>
+
+  <div class="settings">
+    <label class="row">
+      <span class="row-label">Voice</span>
+      <select id="voice"></select>
+    </label>
+    <label class="row">
+      <span class="row-label">Speed</span>
+      <span class="speed">
+        <input id="speed" type="range" min="0.5" max="2" step="0.05">
+        <output id="speedOut" for="speed">1.00×</output>
+      </span>
+    </label>
+    <label class="row">
+      <span class="row-label">Click text to start reading</span>
+      <input id="clickToRead" class="switch" type="checkbox" role="switch">
+    </label>
+    <label class="row">
+      <span class="row-label">Follow along by scrolling</span>
+      <input id="autoScroll" class="switch" type="checkbox" role="switch">
+    </label>
+    <label class="row">
+      <span class="row-label">Highlight color</span>
+      <input id="highlightColor" class="swatch" type="color">
+    </label>
+  </div>
+
+  <footer class="keys-wrap">
+    <dl id="keys" class="keys"></dl>
+    <button id="editKeys" class="link" type="button">Change shortcuts</button>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

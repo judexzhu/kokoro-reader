@@ -1,0 +1,19 @@
+{
+  "name": "kokoro-reader",
+  "version": "0.1.0",
+  "description": "Chrome extension that reads web pages aloud with Kokoro TTS, fully on-device.",
+  "scripts": {
+    "fetch-model": "node scripts/fetch-model.mjs",
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "kokoro-js": "^1.2.1"
+  },
+  "private": true,
+  "type": "module"
+}
