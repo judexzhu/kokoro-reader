@@ -4,6 +4,7 @@
 import { DEFAULTS } from './shared/settings.js';
 import { posKey } from './shared/position.js';
 import { enhanceProsody } from './shared/prosody.js';
+import { splitLong } from './shared/chunking.js';
 
 (() => {
   if (window.__kokoroReader) return; // guard against double injection
@@ -117,22 +118,6 @@ import { enhanceProsody } from './shared/prosody.js';
     return out;
   }
 
-  // Break very long "sentences" at punctuation, falling back to spaces.
-  function splitLong(str, offset, max) {
-    const pieces = [];
-    let from = 0;
-    while (str.length - from > max) {
-      const window = str.slice(from, from + max);
-      let cut = Math.max(...[',', ';', ':', '—', ')'].map((c) => window.lastIndexOf(c)));
-      if (cut < max * 0.4) cut = window.lastIndexOf(' ');
-      if (cut <= 0) cut = max - 1;
-      pieces.push([offset + from, offset + from + cut + 1]);
-      from += cut + 1;
-    }
-    pieces.push([offset + from, offset + str.length]);
-    return pieces;
-  }
-
   function rangeFor(parts, start, end) {
     const locate = (pos, isEnd) => {
       for (let i = parts.length - 1; i >= 0; i--) {
@@ -156,30 +141,11 @@ import { enhanceProsody } from './shared/prosody.js';
     mode = readMode;
     current = Math.max(0, Math.min(index, list.length - 1));
 
-    const items = [];
-    for (let i = 0; i < list.length; i++) {
-      const s = list[i];
-      const isParagraphEnd = i === list.length - 1 || s.block !== list[i + 1].block;
-      const enhanced = enhanceProsody(s.text);
-
-      // Split long first sentence at first comma/clause to start playback sooner (<400ms TTFA)
-      if (i === current && enhanced.length > 60) {
-        const windowText = enhanced.slice(20, 100);
-        const cutMatch = windowText.match(/[,;:\u2014]\s+/);
-        if (cutMatch && cutMatch.index != null) {
-          const cutIdx = 20 + cutMatch.index + cutMatch[0].length;
-          const part1 = enhanced.slice(0, cutIdx).trim();
-          const part2 = enhanced.slice(cutIdx).trim();
-          if (part1 && part2) {
-            items.push({ text: part1, index: i, isParagraphEnd: false });
-            items.push({ text: part2, index: i, isParagraphEnd });
-            continue;
-          }
-        }
-      }
-
-      items.push({ text: enhanced, index: i, isParagraphEnd });
-    }
+    const items = list.map((s, i) => ({
+      text: enhanceProsody(s.text),
+      index: i,
+      isParagraphEnd: i === list.length - 1 || s.block !== list[i + 1].block,
+    }));
 
     try {
       if (!chrome.runtime?.id) return { ok: false };

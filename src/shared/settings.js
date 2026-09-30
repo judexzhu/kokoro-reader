@@ -4,7 +4,7 @@ export const DEFAULTS = {
   clickToRead: true,
   autoScroll: true,
   highlightColor: '#F2B544',
-  maxChars: 500, // keep complete natural sentences intact; only split monster runaways
+  maxChars: 180, // balanced ~8-10s chunks; prevents monster chunks and buffer underrun
 };
 
 export function getSettings() {

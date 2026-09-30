@@ -404,6 +404,19 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
       continue;
     }
 
+    // Pre-roll watermark: on initial playback, ensure at least 4.0s of audio is buffered
+    // If chunk 0 is very short (e.g. title / 2 words), pre-buffer chunk 1 as well
+    // so playback never stalls after just a few words.
+    if (lastAudioEnd === 0 && c === 0 && c + 1 < chunks.length) {
+      const dur0 = raw.audio.length / raw.sampling_rate;
+      if (dur0 < 4.0) {
+        tlog(`⏳ [PRE-ROLL] Initial sentence is short (${dur0.toFixed(2)}s). Pre-buffering sentence #1 for seamless playback...`);
+        try {
+          await requestChunk(my, c + 1, chunks[c + 1].text, settings, 'high');
+        } catch {}
+      }
+    }
+
     // Natural inter-sentence pause: 500ms between sentences, 1000ms at paragraph ends.
     // Subtract time already spent waiting for synthesis.
     // If synthesis stalled and already took longer than target pause, wait 0ms (play immediately!).
