@@ -23,7 +23,6 @@ function tlog(line) {
 
 // ---------- worker setup ----------
 let worker = null;
-let isWorkerBusy = false;
 
 function handleWorkerMessage(e) {
   const msg = e.data;
@@ -38,10 +37,10 @@ function handleWorkerMessage(e) {
       break;
 
     case 'AUDIO': {
-      isWorkerBusy = false;
       if (msg.sessionId !== session) return;
       tlog(`[Worker] Chunk #${msg.chunkId} synthesized in ${msg.synthMs}ms (audio: ${msg.audioSec}s, RTF: ${msg.rtf})`);
       const req = pendingRequests.get(msg.chunkId);
+      pendingRequests.delete(msg.chunkId);
       if (req) {
         putCache(req.key, { audio: msg.audio, sampling_rate: msg.sampling_rate });
         req.resolve({ audio: msg.audio, sampling_rate: msg.sampling_rate });
@@ -50,9 +49,9 @@ function handleWorkerMessage(e) {
     }
 
     case 'AUDIO_ERROR': {
-      isWorkerBusy = false;
       if (msg.sessionId !== session) return;
       const req = pendingRequests.get(msg.chunkId);
+      pendingRequests.delete(msg.chunkId);
       if (req) {
         req.resolve(null);
       }
@@ -65,9 +64,12 @@ function initWorker() {
   if (worker) {
     try { worker.terminate(); } catch {}
   }
-  isWorkerBusy = false;
   worker = new Worker(chrome.runtime.getURL('worker.js'), { type: 'module' });
   worker.onmessage = handleWorkerMessage;
+  worker.onerror = (err) => {
+    console.error('[Offscreen] Worker crashed, re-initializing:', err);
+    initWorker();
+  };
   worker.postMessage({
     type: 'INIT',
     modelId: MODEL_ID,
@@ -109,22 +111,30 @@ function putCache(key, data) {
 
 let pendingRequests = new Map();
 
-function requestChunk(sessionId, chunkId, text, settings) {
-  if (pendingRequests.has(chunkId)) return pendingRequests.get(chunkId).promise;
-
+function requestChunk(sessionId, chunkId, text, settings, priority = 'normal') {
   const key = cacheKey(settings.voice, settings.speed, text);
   const cached = getCache(key);
   if (cached) {
     tlog(`⚡ [CACHE HIT] Sentence #${chunkId} loaded from RAM (0ms). "${text.slice(0, 45)}..."`);
-    const promise = Promise.resolve(cached);
-    pendingRequests.set(chunkId, { key, resolve: () => {}, promise });
-    return promise;
+    return Promise.resolve(cached);
   }
 
-  isWorkerBusy = true;
+  if (pendingRequests.has(chunkId)) {
+    const existing = pendingRequests.get(chunkId);
+    if (priority === 'high' && !existing.isHighPriority) {
+      existing.isHighPriority = true;
+      worker.postMessage({
+        type: 'PRIORITIZE',
+        sessionId,
+        chunkId,
+      });
+    }
+    return existing.promise;
+  }
+
   let resolve, reject;
   const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
-  pendingRequests.set(chunkId, { key, resolve, reject, promise });
+  pendingRequests.set(chunkId, { key, resolve, reject, promise, isHighPriority: priority === 'high' });
 
   worker.postMessage({
     type: 'SYNTH',
@@ -133,6 +143,7 @@ function requestChunk(sessionId, chunkId, text, settings) {
     text,
     voice: settings.voice,
     speed: settings.speed,
+    priority,
   });
 
   return promise;
@@ -140,33 +151,23 @@ function requestChunk(sessionId, chunkId, text, settings) {
 
 // ---------- playback ----------
 const ctx = new AudioContext();
-let current = null; // { src, resolve }
+let current = null; // { src, resolve, clearPause }
 
-// Pad audio with calibrated natural human speech pauses between sentences and paragraphs
-function padAudio(samples, isParagraphEnd) {
-  // 1. Trim leading dead silence (leave 20ms lead-in)
+// Zero-copy trim of leading and trailing dead silence
+function trimSilence(samples) {
   let start = 0;
   while (start < samples.length && Math.abs(samples[start]) < 0.01) start++;
   start = Math.max(0, start - 480);
 
-  // 2. Trim trailing dead silence
   let end = samples.length - 1;
   while (end > start && Math.abs(samples[end]) < 0.01) end--;
 
-  const trimmed = samples.subarray(start, end + 1);
-
-  // 3. Cadence: 500ms between sentences, 1000ms (1s) between paragraphs
-  const pauseDurationSec = isParagraphEnd ? 1.0 : 0.5;
-  const pauseSamples = Math.round(24000 * pauseDurationSec);
-
-  const out = new Float32Array(trimmed.length + pauseSamples);
-  out.set(trimmed, 0);
-  return out;
+  return start === 0 && end === samples.length - 1 ? samples : samples.subarray(start, end + 1);
 }
 
-function play(raw, isParagraphEnd = false, chunkIndex = 0) {
+function play(raw, chunkIndex = 0) {
   return new Promise((resolve) => {
-    const audio = padAudio(raw.audio, isParagraphEnd);
+    const audio = trimSilence(raw.audio);
     const buf = ctx.createBuffer(1, audio.length, raw.sampling_rate);
     buf.copyToChannel(audio, 0);
 
@@ -177,7 +178,7 @@ function play(raw, isParagraphEnd = false, chunkIndex = 0) {
     const playStart = performance.now();
     const actualSilenceGap = lastAudioEnd > 0 ? Math.round(playStart - lastAudioEnd) : 0;
     const speechSec = (raw.audio.length / raw.sampling_rate).toFixed(2);
-    tlog(`▶ [PLAYING] #${chunkIndex} (speech: ${speechSec}s, pause before: ${actualSilenceGap}ms, paragraphEnd: ${isParagraphEnd})`);
+    tlog(`▶ [PLAYING] #${chunkIndex} (speech: ${speechSec}s, pause before: ${actualSilenceGap}ms)`);
 
     src.onended = () => {
       lastAudioEnd = performance.now();
@@ -185,7 +186,11 @@ function play(raw, isParagraphEnd = false, chunkIndex = 0) {
       current = null;
       resolve();
     };
-    current = { src, resolve };
+
+    current = {
+      src,
+      resolve,
+    };
     src.start(0);
   });
 }
@@ -193,11 +198,14 @@ function play(raw, isParagraphEnd = false, chunkIndex = 0) {
 function haltAudio() {
   lastAudioEnd = 0;
   if (!current) return;
-  const { src, resolve } = current;
+  const { src, resolve, clearPause } = current;
   current = null;
-  src.onended = null;
-  try { src.stop(); src.disconnect(); } catch {}
-  resolve();
+  clearPause?.();
+  if (src) {
+    src.onended = null;
+    try { src.stop(); src.disconnect(); } catch {}
+  }
+  resolve?.();
 }
 
 // ---------- reading session ----------
@@ -232,6 +240,8 @@ function skip(delta) {
   if (target === currentPlayIndex && delta !== 0) return;
   skipTarget = target;
   haltAudio();
+  // Clear obsolete prefetch tasks from worker queue
+  worker.postMessage({ type: 'CLEAR_QUEUE' });
   if (currentTabId != null) {
     send({ type: 'PROGRESS', tabId: currentTabId, index: currentChunks[target].index });
   }
@@ -242,15 +252,16 @@ function skip(delta) {
   }
 }
 
-function plan(input, startIndex) {
+function plan(input, startIndex = 0) {
   const list = input || [];
   const chunks = [];
-  for (let i = startIndex; i < list.length; i++) {
+  for (let i = 0; i < list.length; i++) {
     const item = list[i];
     if (typeof item === 'string') {
-      chunks.push({ text: item, index: i, isParagraphEnd: false });
+      if (i >= startIndex) chunks.push({ text: item, index: i, isParagraphEnd: false });
     } else {
-      chunks.push({ text: item.text, index: i, isParagraphEnd: !!item.isParagraphEnd });
+      const idx = item.index ?? i;
+      if (idx >= startIndex) chunks.push({ text: item.text, index: idx, isParagraphEnd: !!item.isParagraphEnd });
     }
   }
   return chunks;
@@ -259,13 +270,8 @@ function plan(input, startIndex) {
 async function playFrom({ tabId, items, texts, startIndex = 0 }) {
   const my = ++session;
 
-  // Instantly terminate worker if it's trapped in a WASM loop computing old sentences
-  if (isWorkerBusy) {
-    tlog(`⚡ [INSTANT ABORT] Terminated busy worker to drop old sentence backlog.`);
-    initWorker();
-  }
-
   worker.postMessage({ type: 'SET_SESSION', sessionId: my });
+  worker.postMessage({ type: 'CLEAR_QUEUE' });
   pendingRequests.clear();
   haltAudio();
   isPaused = false;
@@ -284,9 +290,12 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
 
   const BUFFER_AHEAD = 4; // Keep 4 sentences ahead in background worker queue
 
-  // Pre-queue first 4 sentences immediately so playback buffer never starves
-  for (let i = 0; i < Math.min(chunks.length, BUFFER_AHEAD); i++) {
-    requestChunk(my, i, chunks[i].text, settings);
+  // Pre-queue first sentence as high priority, next sentences as normal prefetch
+  if (chunks.length > 0) {
+    requestChunk(my, 0, chunks[0].text, settings, 'high');
+  }
+  for (let i = 1; i < Math.min(chunks.length, BUFFER_AHEAD); i++) {
+    requestChunk(my, i, chunks[i].text, settings, 'normal');
   }
 
   let shown = -1;
@@ -301,9 +310,12 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
 
     currentPlayIndex = c;
 
+    // Prioritize synthesis for currently active chunk
+    requestChunk(my, c, chunks[c].text, settings, 'high');
+
     // Keep pipeline filled from current position c
     for (let ahead = 1; ahead <= BUFFER_AHEAD && c + ahead < chunks.length; ahead++) {
-      requestChunk(my, c + ahead, chunks[c + ahead].text, settings);
+      requestChunk(my, c + ahead, chunks[c + ahead].text, settings, 'normal');
     }
 
     // If paused, wait until resumed before playing
@@ -321,7 +333,7 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
     const waitT0 = performance.now();
     let raw;
     try {
-      raw = await requestChunk(my, c, chunks[c].text, settings);
+      raw = await requestChunk(my, c, chunks[c].text, settings, 'high');
     } catch {
       raw = null;
     }
@@ -341,12 +353,33 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
       continue;
     }
 
+    // Natural inter-sentence pause: 500ms between sentences, 1000ms at paragraph ends.
+    // Subtract time already spent waiting for synthesis.
+    // If synthesis stalled and already took longer than target pause, wait 0ms (play immediately!).
+    if (lastAudioEnd > 0) {
+      const prevChunk = c > 0 ? chunks[c - 1] : null;
+      const targetGapMs = prevChunk?.isParagraphEnd ? 1000 : 500;
+      const elapsedSinceAudioEnd = performance.now() - lastAudioEnd;
+      const remainingGapMs = Math.max(0, targetGapMs - elapsedSinceAudioEnd);
+      if (remainingGapMs > 0) {
+        let pauseTimer = null;
+        await new Promise((res) => {
+          pauseTimer = setTimeout(res, remainingGapMs);
+          current = { clearPause: () => { clearTimeout(pauseTimer); res(); } };
+        });
+        current = null;
+      }
+    }
+
+    if (my !== session) return;
+    if (skipTarget != null) continue;
+
     if (chunks[c].index !== shown) {
       shown = chunks[c].index;
       send({ type: 'PROGRESS', tabId, index: shown });
     }
 
-    await play(raw, chunks[c].isParagraphEnd, c);
+    await play(raw, c);
     if (my !== session) return;
     if (skipTarget != null) continue; // Skip triggered while playing chunk
 
@@ -361,7 +394,8 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
 
 function stop() {
   session++;
-  initWorker();
+  worker.postMessage({ type: 'SET_SESSION', sessionId: session });
+  worker.postMessage({ type: 'CLEAR_QUEUE' });
   pendingRequests.clear();
   haltAudio();
   isPaused = false;

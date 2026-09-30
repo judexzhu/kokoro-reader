@@ -40,7 +40,16 @@ if (missing.length) {
 }
 
 // 5. Scripts
-const common = { absWorkingDir: root, bundle: true, platform: 'browser', target: 'chrome116', outdir: out, logLevel: 'info', legalComments: 'none' };
+const common = {
+  absWorkingDir: root,
+  bundle: true,
+  platform: 'browser',
+  target: 'chrome116',
+  outdir: out,
+  logLevel: 'info',
+  legalComments: 'none',
+  minify: !watch,
+};
 const builds = [
   { ...common, entryPoints: { background: 'src/background.js', offscreen: 'src/offscreen.js', worker: 'src/worker.js' }, format: 'esm' },
   { ...common, entryPoints: { popup: 'src/popup.js', content: 'src/content.js' }, format: 'iife' },

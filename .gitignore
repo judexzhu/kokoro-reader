@@ -3,5 +3,6 @@ dist/
 models/
 *.part
 .pi/
+.codegraph/
 .DS_Store
 

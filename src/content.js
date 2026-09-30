@@ -24,6 +24,32 @@ import { posKey } from './shared/position.js';
   let mode = 'page'; // 'page' saves the position; 'selection' doesn't
   let lastContextMenu = null; // where the user right-clicked
 
+  let cachedSentences = null;
+  let lastHref = location.href;
+
+  function invalidateCache() {
+    cachedSentences = null;
+  }
+
+  // Invalidate cache when DOM changes (CSS Highlight API does not trigger mutations)
+  try {
+    const observer = new MutationObserver(() => {
+      cachedSentences = null;
+    });
+    if (document.body) {
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    }
+  } catch {}
+
+  function getSentences(force = false) {
+    if (!force && cachedSentences && location.href === lastHref) {
+      return cachedSentences;
+    }
+    lastHref = location.href;
+    cachedSentences = collectSentences();
+    return cachedSentences;
+  }
+
   // ---------- settings + highlight style ----------
   const styleEl = document.createElement('style');
   function applyStyle() {
@@ -128,20 +154,41 @@ import { posKey } from './shared/position.js';
     sentences = list;
     mode = readMode;
     current = Math.max(0, Math.min(index, list.length - 1));
-    const items = list.map((s, i) => ({
-      text: s.text,
-      isParagraphEnd: i === list.length - 1 || s.block !== list[i + 1].block,
-    }));
+
+    const items = [];
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      const isParagraphEnd = i === list.length - 1 || s.block !== list[i + 1].block;
+
+      // Split long first sentence at first comma/clause to start playback sooner (<400ms TTFA)
+      if (i === current && s.text.length > 60) {
+        const windowText = s.text.slice(20, 100);
+        const cutMatch = windowText.match(/[,;:\u2014]\s+/);
+        if (cutMatch && cutMatch.index != null) {
+          const cutIdx = 20 + cutMatch.index + cutMatch[0].length;
+          const part1 = s.text.slice(0, cutIdx).trim();
+          const part2 = s.text.slice(cutIdx).trim();
+          if (part1 && part2) {
+            items.push({ text: part1, index: i, isParagraphEnd: false });
+            items.push({ text: part2, index: i, isParagraphEnd });
+            continue;
+          }
+        }
+      }
+
+      items.push({ text: s.text, index: i, isParagraphEnd });
+    }
+
     try {
       if (!chrome.runtime?.id) return { ok: false };
-      chrome.runtime.sendMessage({ type: 'READ', items, texts: list.map((s) => s.text), startIndex: current }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'READ', items, startIndex: current }).catch(() => {});
     } catch {}
     return { ok: true };
   }
 
   function readSelection(sel) {
     const r = sel.getRangeAt(0);
-    const picked = collectSentences().filter(
+    const picked = getSentences().filter(
       (s) =>
         s.range.compareBoundaryPoints(Range.START_TO_END, r) > 0 &&
         s.range.compareBoundaryPoints(Range.END_TO_START, r) < 0,
@@ -149,14 +196,14 @@ import { posKey } from './shared/position.js';
     return start(picked, 0, 'selection');
   }
 
-  function readPage(all = collectSentences()) {
+  function readPage(all = getSentences()) {
     const main = document.querySelector('article, main, [role="main"]');
     const i = main ? all.findIndex((s) => main.contains(s.block)) : 0;
     return start(all, Math.max(i, 0));
   }
 
   async function resumeOrReadPage({ fromTop = false } = {}) {
-    const all = collectSentences();
+    const all = getSentences();
     if (!fromTop) {
       const saved = await loadPosition();
       const i = saved ? findSaved(all, saved) : -1;
@@ -175,7 +222,7 @@ import { posKey } from './shared/position.js';
   // Start at the sentence under (x, y). Returns null if nothing readable is there.
   function startAtPoint(x, y, target) {
     const pos = caretAt(x, y);
-    const all = collectSentences();
+    const all = getSentences();
     if (!all.length) return null;
 
     let idx = -1;
@@ -345,7 +392,7 @@ import { posKey } from './shared/position.js';
         clear();
         break;
       case 'NAV': {
-        if (!sentences.length) sentences = collectSentences();
+        if (!sentences.length) sentences = getSentences();
         if (sentences.length) {
           const next = Math.max(0, Math.min((current < 0 ? 0 : current) + msg.delta, sentences.length - 1));
           highlight(next);
