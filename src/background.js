@@ -91,7 +91,7 @@ async function stopReading() {
 async function toggle() {
   const alive = await engineAlive();
   const { state } = await sget('engine', { state: 'idle' });
-  if (alive && state === 'playing') { await toEngine({ type: 'PAUSE' }, { create: false }); return { ok: true }; }
+  if (alive && (state === 'playing' || state === 'buffering')) { await toEngine({ type: 'PAUSE' }, { create: false }); return { ok: true }; }
   if (alive && state === 'paused') { await toEngine({ type: 'RESUME' }, { create: false }); return { ok: true }; }
   return startOnActiveTab();
 }
@@ -147,7 +147,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       const alive = await engineAlive();
       const { state } = await sget('engine', { state: 'idle' });
       const delta = command === 'next-sentence' ? 1 : -1;
-      if (alive && (state === 'playing' || state === 'paused')) {
+      if (alive && (state === 'playing' || state === 'paused' || state === 'buffering')) {
         await toEngine({ type: 'SKIP', delta }, { create: false });
         return;
       }

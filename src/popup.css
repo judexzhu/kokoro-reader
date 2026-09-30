@@ -60,10 +60,15 @@ body[data-state="error"] .status { color: var(--warn); }
 .play:active { transform: scale(0.97); }
 body[data-state="idle"] .play,
 body[data-state="loading"] .play,
+body[data-state="buffering"] .play,
 body[data-state="error"] .play {
   background: var(--night-raised);
   color: var(--lamp);
   box-shadow: none;
+}
+
+body[data-state="buffering"] .play {
+  box-shadow: 0 0 0 6px rgba(242, 181, 68, 0.16);
 }
 
 .ring { position: absolute; inset: -8px; width: 100px; height: 100px; transform: rotate(-90deg); pointer-events: none; }
@@ -77,12 +82,36 @@ body[data-state="loading"] .ring-track { stroke: var(--rule); }
   stroke-dashoffset: 289.03;
   transition: stroke-dashoffset 250ms linear;
 }
-body:not([data-state="loading"]) .ring-fill { stroke: transparent; }
+body:not([data-state="loading"]):not([data-state="buffering"]) .ring-fill { stroke: transparent; }
+
+@keyframes ring-spin {
+  0% { transform: rotate(-90deg); }
+  100% { transform: rotate(270deg); }
+}
+
+@keyframes spin-center {
+  to { transform: rotate(360deg); }
+}
+
+body[data-state="buffering"] .ring {
+  animation: ring-spin 900ms linear infinite;
+}
+body[data-state="buffering"] .ring-track {
+  stroke: rgba(242, 181, 68, 0.2);
+}
+body[data-state="buffering"] .ring-fill {
+  stroke: var(--lamp);
+  stroke-dasharray: 75 214;
+  stroke-dashoffset: 0;
+  transition: none;
+}
 
 .icon { position: absolute; inset: 0; margin: auto; width: 34px; height: 34px; fill: currentColor; }
-.icon-pause { display: none; }
+.icon-pause, .icon-spin { display: none; }
 body[data-state="playing"] .icon-play { display: none; }
 body[data-state="playing"] .icon-pause { display: block; }
+body[data-state="buffering"] .icon-play { display: none; }
+body[data-state="buffering"] .icon-spin { display: block; animation: spin-center 750ms linear infinite; }
 
 .transport-side { min-width: 0; }
 .play-label { margin: 0; font: 600 16px/1.25 var(--serif); }

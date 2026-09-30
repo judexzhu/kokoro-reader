@@ -10,6 +10,7 @@ const LABELS = {
   idle: ['The voice model loads when you start reading.', 'Read this page'],
   loading: [null, 'Loading'],
   ready: ['Ready', 'Read this page'],
+  buffering: ['Generating speech...', 'Generating...'],
   playing: ['Reading', 'Pause'],
   paused: ['Paused', 'Resume'],
   error: [null, 'Try again'],
@@ -32,13 +33,17 @@ function render(engine = engineState) {
     : status;
   $('playLabel').textContent = action;
   $('play').setAttribute('aria-label', action);
-  $('ring').style.strokeDashoffset = String(RING * (1 - (engine.progress || 0)));
-  $('stop').disabled = !['playing', 'paused', 'loading'].includes(state);
+  if (state === 'loading') {
+    $('ring').style.strokeDashoffset = String(RING * (1 - (engine.progress || 0)));
+  } else {
+    $('ring').style.strokeDashoffset = '0';
+  }
+  $('stop').disabled = !['playing', 'paused', 'loading', 'buffering'].includes(state);
   $('fromTop').hidden = !canResume;
   $('playHint').hidden = !!canResume;
 
-  // Lock voice and speed during active playback/loading to prevent pipeline mismatch
-  const isAudioLocked = ['playing', 'loading'].includes(state);
+  // Lock voice and speed during active playback or generation to prevent pipeline mismatch
+  const isAudioLocked = ['playing', 'loading', 'buffering'].includes(state);
   $('voice').disabled = isAudioLocked;
   $('speed').disabled = isAudioLocked;
 

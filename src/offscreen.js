@@ -207,7 +207,7 @@ function trimSilence(samples) {
   return start === 0 && end === samples.length - 1 ? samples : samples.subarray(start, end + 1);
 }
 
-function play(raw, chunkIndex = 0) {
+function play(raw, chunkIndex = 0, tabId = null) {
   return new Promise((resolve) => {
     const audio = trimSilence(raw.audio);
     const buf = ctx.createBuffer(1, audio.length, raw.sampling_rate);
@@ -221,6 +221,11 @@ function play(raw, chunkIndex = 0) {
     const actualSilenceGap = lastAudioEnd > 0 ? Math.round(playStart - lastAudioEnd) : 0;
     const speechSec = (raw.audio.length / raw.sampling_rate).toFixed(2);
     tlog(`▶ [PLAYING] #${chunkIndex} (speech: ${speechSec}s, pause before: ${actualSilenceGap}ms)`);
+
+    // Report active playback once audio actually hits Web Audio destination
+    if (!isPaused) {
+      report({ state: 'playing', tabId });
+    }
 
     src.onended = () => {
       lastAudioEnd = performance.now();
@@ -321,7 +326,7 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
   if (pauseResolve) { const r = pauseResolve; pauseResolve = null; r(); }
   if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
 
-  report({ state: 'playing', progress: 1, tabId });
+  report({ state: 'buffering', progress: 1, tabId });
   const chunks = plan(items || texts, startIndex);
   currentChunks = chunks;
   if (!chunks.length) {
@@ -375,6 +380,10 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
     const waitT0 = performance.now();
     let raw;
     try {
+      const key = cacheKey(settings.voice, settings.speed, chunks[c].text);
+      if (!audioCache.has(key) && !isPaused) {
+        report({ state: 'buffering', tabId });
+      }
       raw = await requestChunk(my, c, chunks[c].text, settings, 'high');
     } catch {
       raw = null;
@@ -421,7 +430,7 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
       send({ type: 'PROGRESS', tabId, index: shown });
     }
 
-    await play(raw, c);
+    await play(raw, c, tabId);
     if (my !== session) return;
     if (skipTarget != null) continue; // Skip triggered while playing chunk
 
