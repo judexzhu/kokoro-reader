@@ -404,13 +404,13 @@ async function playFrom({ tabId, items, texts, startIndex = 0 }) {
       continue;
     }
 
-    // Pre-roll watermark: on initial playback, ensure at least 4.0s of audio is buffered
-    // If chunk 0 is very short (e.g. title / 2 words), pre-buffer chunk 1 as well
-    // so playback never stalls after just a few words.
+    // Pre-roll watermark: on initial playback, ensure enough audio is buffered in RAM
+    // to prevent any secondary stall after the first sentence.
+    // If chunk 0 has less than 10.0s of speech, pre-buffer chunk 1 as well.
     if (lastAudioEnd === 0 && c === 0 && c + 1 < chunks.length) {
       const dur0 = raw.audio.length / raw.sampling_rate;
-      if (dur0 < 4.0) {
-        tlog(`⏳ [PRE-ROLL] Initial sentence is short (${dur0.toFixed(2)}s). Pre-buffering sentence #1 for seamless playback...`);
+      if (dur0 < 10.0) {
+        tlog(`⏳ [PRE-ROLL] Initial sentence has ${dur0.toFixed(2)}s audio (<10s). Pre-buffering sentence #1 so playback never stalls...`);
         try {
           await requestChunk(my, c + 1, chunks[c + 1].text, settings, 'high');
         } catch {}

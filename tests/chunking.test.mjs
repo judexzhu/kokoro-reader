@@ -14,14 +14,15 @@ test('splitLong: leaves sentences under maxChars intact', () => {
   assert.deepEqual(chunks[0], [0, text.length]);
 });
 
-test('Pre-roll logic: short initial chunk triggers pre-buffering', () => {
-  const PRE_ROLL_MIN_SEC = 4.0;
+test('Pre-roll logic: initial chunks under 10.0s trigger pre-buffering', () => {
+  const PRE_ROLL_MIN_SEC = 10.0;
   const isInitial = (lastAudioEnd, c) => lastAudioEnd === 0 && c === 0;
   const needsPreRoll = (dur, lastAudioEnd, c, hasNext) => isInitial(lastAudioEnd, c) && dur < PRE_ROLL_MIN_SEC && hasNext;
 
   assert.equal(needsPreRoll(1.5, 0, 0, true), true, 'Short title (1.5s) must pre-roll next chunk');
-  assert.equal(needsPreRoll(6.5, 0, 0, true), false, 'Normal sentence (6.5s) starts immediately');
-  assert.equal(needsPreRoll(1.5, 1000, 1, true), false, 'Subsequent chunks do not trigger initial pre-roll');
-  assert.equal(needsPreRoll(1.5, 0, 0, false), false, 'Single-sentence text plays immediately');
+  assert.equal(needsPreRoll(4.3, 0, 0, true), true, 'Sentence under 10s (4.3s) must pre-roll next chunk');
+  assert.equal(needsPreRoll(12.0, 0, 0, true), false, 'Long sentence (12.0s) has enough buffer to start immediately');
+  assert.equal(needsPreRoll(4.3, 1000, 1, true), false, 'Subsequent chunks do not trigger initial pre-roll');
+  assert.equal(needsPreRoll(4.3, 0, 0, false), false, 'Single-sentence text plays immediately');
 });
 
