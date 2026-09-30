@@ -148,6 +148,14 @@ select {
   color: var(--paper);
   font: inherit;
 }
+select:disabled, input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.row:has(select:disabled) .row-label,
+.row:has(input[type="range"]:disabled) .row-label {
+  opacity: 0.55;
+}
 
 .speed { display: flex; align-items: center; gap: 8px; }
 .speed output { width: 3.4em; text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }

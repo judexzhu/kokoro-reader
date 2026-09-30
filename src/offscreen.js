@@ -473,10 +473,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       stop();
       sendResponse?.({ ok: true });
       break;
-    case 'SETTINGS':
+    case 'SETTINGS': {
+      const changed = settings.voice !== msg.voice || settings.speed !== msg.speed;
       settings = { voice: msg.voice, speed: msg.speed };
+      // Invalidate pre-buffered sentences if voice/speed changed while paused
+      if (changed && isPaused) {
+        worker.postMessage({ type: 'CLEAR_QUEUE' });
+        pendingRequests.clear();
+      }
       sendResponse?.({ ok: true });
       break;
+    }
     case 'PRELOAD':
       worker.postMessage({ type: 'PRELOAD' });
       sendResponse?.({ ok: true });

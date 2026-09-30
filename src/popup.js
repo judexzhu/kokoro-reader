@@ -36,6 +36,12 @@ function render(engine = engineState) {
   $('stop').disabled = !['playing', 'paused', 'loading'].includes(state);
   $('fromTop').hidden = !canResume;
   $('playHint').hidden = !!canResume;
+
+  // Lock voice and speed during active playback/loading to prevent pipeline mismatch
+  const isAudioLocked = ['playing', 'loading'].includes(state);
+  $('voice').disabled = isAudioLocked;
+  $('speed').disabled = isAudioLocked;
+
   renderResume(canResume);
 }
 
