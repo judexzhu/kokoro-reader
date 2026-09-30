@@ -1,5 +1,5 @@
 import { DEFAULTS, getSettings } from './shared/settings.js';
-import { VOICES } from './shared/voices.js';
+import { VOICES, VOICE_BLENDS } from './shared/voices.js';
 import { posKey } from './shared/position.js';
 
 const $ = (id) => document.getElementById(id);
@@ -89,8 +89,19 @@ $('stop').addEventListener('click', () => {
 
 // ---------- settings ----------
 function fillVoices(selected) {
-  const groups = { 'en-us': 'American English', 'en-gb': 'British English' };
   const select = $('voice');
+  select.innerHTML = '';
+
+  // 1. Curated Emotional & Expressive Blends
+  const blendGroup = document.createElement('optgroup');
+  blendGroup.label = '✨ Expressive Blends';
+  for (const [id, v] of Object.entries(VOICE_BLENDS)) {
+    blendGroup.append(new Option(`${v.name} (${v.gender.toLowerCase()}, ${v.grade})`, id, false, id === selected));
+  }
+  select.append(blendGroup);
+
+  // 2. Base Voices
+  const groups = { 'en-us': 'American English', 'en-gb': 'British English' };
   for (const [lang, label] of Object.entries(groups)) {
     const og = document.createElement('optgroup');
     og.label = label;

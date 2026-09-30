@@ -2,6 +2,7 @@
 // Runs ONNX WASM in background thread so the extension UI and AudioContext never freeze.
 import { KokoroTTS } from 'kokoro-js';
 import { env } from '@huggingface/transformers';
+import { VOICE_BLENDS } from './shared/voices.js';
 
 // Suppress benign Content-Length warning on chrome-extension:// URLs
 const _warn = console.warn;
@@ -22,10 +23,52 @@ let currentJob = null;
 const completedChunks = new Set();
 
 const seeded = new Set();
+
+async function fetchVoiceBuffer(id) {
+  const cache = await caches.open('kokoro-voices');
+  const voiceUrl = `https://huggingface.co/${modelId}/resolve/main/voices/${id}.bin`;
+  const cached = await cache.match(voiceUrl);
+  if (cached) return await cached.arrayBuffer();
+
+  const res = await fetch(`${voicesPath}${id}.bin`);
+  if (!res.ok) throw new Error(`Voice file missing: ${id}.bin`);
+  const buf = await res.arrayBuffer();
+  await cache.put(voiceUrl, new Response(buf.slice(0), {
+    headers: { 'Content-Type': 'application/octet-stream' },
+  }));
+  return buf;
+}
+
 async function ensureVoice(id) {
   if (seeded.has(id)) return;
   const cache = await caches.open('kokoro-voices');
   const voiceUrl = `https://huggingface.co/${modelId}/resolve/main/voices/${id}.bin`;
+
+  // Dynamic emotional voice blending
+  if (VOICE_BLENDS[id]) {
+    const blend = VOICE_BLENDS[id];
+    const compBuffers = await Promise.all(
+      blend.components.map((c) => fetchVoiceBuffer(c.id))
+    );
+    const floatArrays = compBuffers.map((b) => new Float32Array(b));
+    const len = floatArrays[0].length;
+    const blended = new Float32Array(len);
+
+    for (let i = 0; i < len; i++) {
+      let sum = 0;
+      for (let j = 0; j < blend.components.length; j++) {
+        sum += blend.components[j].weight * floatArrays[j][i];
+      }
+      blended[i] = sum;
+    }
+
+    await cache.put(voiceUrl, new Response(blended.buffer, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+    }));
+    seeded.add(id);
+    return;
+  }
+
   if (!(await cache.match(voiceUrl))) {
     const res = await fetch(`${voicesPath}${id}.bin`);
     if (!res.ok) throw new Error(`Voice file missing: ${id}.bin`);
@@ -76,6 +119,13 @@ function loadModel() {
     }
   })().then(
     (tts) => {
+      // Support emotional voice blends and determine language dialect ('a' or 'b')
+      tts._validate_voice = (id) => {
+        if (VOICE_BLENDS[id]) {
+          return VOICE_BLENDS[id].lang.startsWith('en-gb') ? 'b' : 'a';
+        }
+        return id.at(0) === 'b' ? 'b' : 'a';
+      };
       self.postMessage({ type: 'MODEL_STATUS', state: 'ready', progress: 1 });
       return tts;
     },

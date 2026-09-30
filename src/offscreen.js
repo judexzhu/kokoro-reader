@@ -152,6 +152,48 @@ function requestChunk(sessionId, chunkId, text, settings, priority = 'normal') {
 // ---------- playback ----------
 const ctx = new AudioContext();
 let current = null; // { src, resolve, clearPause }
+let masterChain = null;
+
+// Studio vocal mastering chain: removes sub-bass rumble, enhances vocal body & air, levels dynamic range
+function getMasterNode() {
+  if (masterChain) return masterChain;
+
+  // 1. High-pass filter: cut low rumble below 80Hz
+  const highpass = ctx.createBiquadFilter();
+  highpass.type = 'highpass';
+  highpass.frequency.value = 80;
+  highpass.Q.value = 0.707;
+
+  // 2. Warmth peaking EQ: subtle chest resonance at 220Hz
+  const warmth = ctx.createBiquadFilter();
+  warmth.type = 'peaking';
+  warmth.frequency.value = 220;
+  warmth.Q.value = 1.0;
+  warmth.gain.value = 1.5;
+
+  // 3. Presence highshelf: crisp intelligibility and breath presence at 3.8kHz
+  const air = ctx.createBiquadFilter();
+  air.type = 'highshelf';
+  air.frequency.value = 3800;
+  air.gain.value = 1.8;
+
+  // 4. Dynamics compressor: smooths volume peaks, elevates quiet breath nuances
+  const compressor = ctx.createDynamicsCompressor();
+  compressor.threshold.value = -18;
+  compressor.knee.value = 12;
+  compressor.ratio.value = 3.0;
+  compressor.attack.value = 0.005;
+  compressor.release.value = 0.060;
+
+  // Connect mastering graph: highpass -> warmth -> air -> compressor -> destination
+  highpass.connect(warmth);
+  warmth.connect(air);
+  air.connect(compressor);
+  compressor.connect(ctx.destination);
+
+  masterChain = highpass;
+  return masterChain;
+}
 
 // Zero-copy trim of leading and trailing dead silence
 function trimSilence(samples) {
@@ -173,7 +215,7 @@ function play(raw, chunkIndex = 0) {
 
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(ctx.destination);
+    src.connect(getMasterNode());
 
     const playStart = performance.now();
     const actualSilenceGap = lastAudioEnd > 0 ? Math.round(playStart - lastAudioEnd) : 0;

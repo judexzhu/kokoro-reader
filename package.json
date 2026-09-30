@@ -5,7 +5,8 @@
   "scripts": {
     "fetch-model": "node scripts/fetch-model.mjs",
     "build": "node scripts/build.mjs",
-    "watch": "node scripts/build.mjs --watch"
+    "watch": "node scripts/build.mjs --watch",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2"

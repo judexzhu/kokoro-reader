@@ -3,6 +3,7 @@
 // the sentence being spoken with the CSS Custom Highlight API (no DOM edits).
 import { DEFAULTS } from './shared/settings.js';
 import { posKey } from './shared/position.js';
+import { enhanceProsody } from './shared/prosody.js';
 
 (() => {
   if (window.__kokoroReader) return; // guard against double injection
@@ -159,15 +160,16 @@ import { posKey } from './shared/position.js';
     for (let i = 0; i < list.length; i++) {
       const s = list[i];
       const isParagraphEnd = i === list.length - 1 || s.block !== list[i + 1].block;
+      const enhanced = enhanceProsody(s.text);
 
       // Split long first sentence at first comma/clause to start playback sooner (<400ms TTFA)
-      if (i === current && s.text.length > 60) {
-        const windowText = s.text.slice(20, 100);
+      if (i === current && enhanced.length > 60) {
+        const windowText = enhanced.slice(20, 100);
         const cutMatch = windowText.match(/[,;:\u2014]\s+/);
         if (cutMatch && cutMatch.index != null) {
           const cutIdx = 20 + cutMatch.index + cutMatch[0].length;
-          const part1 = s.text.slice(0, cutIdx).trim();
-          const part2 = s.text.slice(cutIdx).trim();
+          const part1 = enhanced.slice(0, cutIdx).trim();
+          const part2 = enhanced.slice(cutIdx).trim();
           if (part1 && part2) {
             items.push({ text: part1, index: i, isParagraphEnd: false });
             items.push({ text: part2, index: i, isParagraphEnd });
@@ -176,7 +178,7 @@ import { posKey } from './shared/position.js';
         }
       }
 
-      items.push({ text: s.text, index: i, isParagraphEnd });
+      items.push({ text: enhanced, index: i, isParagraphEnd });
     }
 
     try {

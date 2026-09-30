@@ -1,3 +1,47 @@
+// Curated emotional voice blends that combine warm baselines with expressive inflections
+export const VOICE_BLENDS = {
+  blend_heart_bella: {
+    name: 'Heart + Bella (Warm & Animated)',
+    lang: 'en-us',
+    gender: 'Female',
+    grade: 'A+',
+    components: [
+      { id: 'af_heart', weight: 0.60 },
+      { id: 'af_bella', weight: 0.40 },
+    ],
+  },
+  blend_heart_nicole: {
+    name: 'Heart + Nicole (Warm & Gentle)',
+    lang: 'en-us',
+    gender: 'Female',
+    grade: 'A',
+    components: [
+      { id: 'af_heart', weight: 0.65 },
+      { id: 'af_nicole', weight: 0.35 },
+    ],
+  },
+  blend_fenrir_michael: {
+    name: 'Fenrir + Michael (Expressive Narrator)',
+    lang: 'en-us',
+    gender: 'Male',
+    grade: 'A-',
+    components: [
+      { id: 'am_fenrir', weight: 0.55 },
+      { id: 'am_michael', weight: 0.45 },
+    ],
+  },
+  blend_fable_george: {
+    name: 'Fable + George (British Storyteller)',
+    lang: 'en-gb',
+    gender: 'Male',
+    grade: 'A-',
+    components: [
+      { id: 'bm_fable', weight: 0.50 },
+      { id: 'bm_george', weight: 0.50 },
+    ],
+  },
+};
+
 // Mirrors the voice table in kokoro-js 1.2.1 (English voices only; kokoro-js rejects others).
 // Kept separate so the popup doesn't need to import the TTS library.
 export const VOICES = {
